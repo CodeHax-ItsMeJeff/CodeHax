@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Universal Python Obfuscator / Decoder (+ self‑updater)
+Universal Python Obfuscator / Decoder + NGL Spammer (+ self‑updater)
 Made by @ItsMeJeff
-v2.5
+v3.0
 """
 
-import base64, zlib, marshal, types, re, sys, os, subprocess, tempfile, struct, time, importlib, shutil, urllib.request
+import base64, zlib, marshal, types, re, sys, os, subprocess, tempfile, struct, time, importlib, shutil, urllib.request, requests
 from pathlib import Path
 from io import StringIO
 
@@ -15,16 +15,16 @@ try:
     from rich.prompt import Prompt
     from rich.table import Table
 except ImportError:
-    print("[!] pip install rich")
+    print("[!] pip install rich requests")
     sys.exit(1)
 
 console = Console()
-VERSION = "2.5"
+VERSION = "3.0"
 UPDATE_URL = "https://github.com/CodeHax-ItsMeJeff/CodeHax/raw/refs/heads/main/main.py"
 
-# ------------------------------------------------------------
-#  Decoding engines
-# ------------------------------------------------------------
+# ================================================================
+#  DECODING ENGINES
+# ================================================================
 def decode_layer_v1(enc):
     try:
         c = enc.replace('\n','').replace(' ','')
@@ -135,7 +135,6 @@ def decode_pyobf(file):
         console.print(f"[red]marshal: {e}[/red]"); return None
     if not isinstance(code, types.CodeType):
         console.print("[yellow]Not a code object[/yellow]"); return None
-    # Try all engines in order
     for engine in (try_uncompyle6, try_decompyle3, try_pycdc):
         res = engine(code)
         if res:
@@ -195,9 +194,9 @@ def auto_decode(file_path):
     else:
         console.print("[red]Cannot decode[/red]")
 
-# ------------------------------------------------------------
-#  Obfuscation engines
-# ------------------------------------------------------------
+# ================================================================
+#  OBFUSCATION ENGINES
+# ================================================================
 def one_layer_encode(text):
     comp = zlib.compress(text.encode())
     b64_1 = base64.b64encode(comp).decode()
@@ -247,9 +246,47 @@ def one_layer_encode_marshal(text):
     rev = b64_1[::-1]
     return base64.b64encode(rev.encode()).decode()
 
-# ------------------------------------------------------------
-#  Self‑updater
-# ------------------------------------------------------------
+# ================================================================
+#  NGL SPAMMER
+# ================================================================
+def ngl_spammer_menu():
+    console.print(Panel.fit("💀 [bold]NGL Spammer[/bold]", border_style="red"))
+    username = Prompt.ask("Enter username")
+    message = Prompt.ask("Enter your message")
+    sl = int(Prompt.ask("Enter the quantity (requests to send)"))
+    extra = Prompt.ask("Add extra messages? (Yes/No)", default="No")
+    if extra.lower() == "yes":
+        additional_message = Prompt.ask("Enter additional message")
+    else:
+        additional_message = message
+
+    url = "https://ngl.link/api/submit"
+    session = requests.Session()
+    for i in range(sl):
+        payload = f"username={username}&question={additional_message}&deviceId=b8803802-3b9a-4f58-81dd-b0483418aecc&gameSlug=&referrer="
+        headers = {
+            'authority': 'ngl.link',
+            'accept': '*/*',
+            'accept-language': 'vi,fr-FR;q=0.9,fr;q=0.8,en-US;q=0.7,en;q=0.6',
+            'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'origin': 'https://ngl.link',
+            'referer': f'https://ngl.link/{username}',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'x-requested-with': 'XMLHttpRequest'
+        }
+        response = session.post(url, headers=headers, data=payload)
+        if response.status_code == 200:
+            console.print(f"[green][✔] Sent to {username} | {additional_message}[/green]")
+        else:
+            console.print(f"[red][✖] Failed. Status: {response.status_code}[/red]")
+        time.sleep(0.3)  # Small delay to avoid rate limits
+    console.print("[yellow]NGL Spam completed.[/yellow]")
+
+# ================================================================
+#  SELF‑UPDATER
+# ================================================================
 def self_update(restart=True):
     console.print("[cyan]🔍 Checking for updates...[/cyan]")
     try:
@@ -267,9 +304,9 @@ def self_update(restart=True):
     except Exception as e:
         console.print(f"[red]Update failed: {e}[/red]")
 
-# ------------------------------------------------------------
-#  Menus
-# ------------------------------------------------------------
+# ================================================================
+#  MENUS
+# ================================================================
 def decode_menu():
     console.print(Panel.fit("📜 Decoder", border_style="blue"))
     file_path = Prompt.ask("Obfuscated file path")
@@ -308,7 +345,7 @@ def encrypt_menu():
 def main():
     console.clear()
     console.print(Panel.fit(
-        "[bold bright_cyan]🛡️ Universal Python Obfuscator / Decoder[/bold bright_cyan]\n"
+        "[bold bright_cyan]🛡️ Universal Python Obfuscator / Decoder + NGL Spammer[/bold bright_cyan]\n"
         f"v{VERSION} – Made by @ItsMeJeff",
         border_style="bright_cyan"))
     while True:
@@ -316,17 +353,20 @@ def main():
         t = Table(show_header=False, box=None)
         t.add_row("[bold][1][/bold] Decoder")
         t.add_row("[bold][2][/bold] Obfuscator")
-        t.add_row("[bold][3][/bold] Check for updates")
-        t.add_row("[bold][4][/bold] Exit")
+        t.add_row("[bold][3][/bold] NGL Spammer")
+        t.add_row("[bold][4][/bold] Check for updates")
+        t.add_row("[bold][5][/bold] Exit")
         console.print(t)
-        c = Prompt.ask("Select", choices=["1","2","3","4"], default="1")
+        c = Prompt.ask("Select", choices=["1","2","3","4","5"], default="1")
         if c == "1":
             decode_menu()
         elif c == "2":
             encrypt_menu()
         elif c == "3":
-            self_update(restart=True)
+            ngl_spammer_menu()
         elif c == "4":
+            self_update(restart=True)
+        elif c == "5":
             console.print("[green]Goodbye[/green]")
             sys.exit(0)
         input("\nPress Enter to return to menu...")
