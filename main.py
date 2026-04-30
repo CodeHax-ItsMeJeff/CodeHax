@@ -20,7 +20,7 @@ except ImportError:
 
 console = Console()
 VERSION = "2.5"
-UPDATE_URL = "https://raw.githubusercontent.com/ItsMeJeff/universal-py-obfuscator/main/obf_tool.py"
+UPDATE_URL = "https://github.com/CodeHax-ItsMeJeff/CodeHax/raw/refs/heads/main/main.py"
 
 # ------------------------------------------------------------
 #  Decoding engines
