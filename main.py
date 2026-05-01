@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Enhanced Universal Python Obfuscator / Decoder + NGL Spammer + Self‑Updater + NetEase Checker
-Made by @ItsMeJeff & @Antraxdevz
+Made by @ItsMeJeff
 v4.1
 """
 
@@ -623,7 +623,7 @@ def interactive_menu():
             console.print(ASCII_ART, style="bold cyan")
             console.print(Panel.fit(
                 "[bold bright_cyan]🛡️ Universal Python Obfuscator / Decoder + NGL Spammer + NetEase Checker[/bold bright_cyan]\n"
-                f"v{VERSION} – Made by @ItsMeJeff & @Antraxdevz",
+                f"v{VERSION} – Made by @ItsMeJeff",
                 border_style="bright_cyan"))
             table = Table(show_header=False, box=None)
             table.add_row("[bold][1][/bold] Decode a file")
