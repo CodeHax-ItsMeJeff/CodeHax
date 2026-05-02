@@ -67,7 +67,7 @@ NGL_API_URL = "https://ngl.link/api/submit"
 # Codashop constants
 COGNITO_CLIENT_ID = "437f3u0sfh0h7av0rlrrjdtmsb"
 COGNITO_REGION = "ap-southeast-1"
-COGNITO_URL = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/"
+COGNITO_URL = f"https://cognito-idp.ap-southeast-1.amazonaws.com"
 WALLET_API = "https://wallet-api.codacash.com"
 USER_API = "https://user-api.codacash.com"
 GAME_API = "https://game-api.codacash.com"
